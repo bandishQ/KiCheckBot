@@ -1,85 +1,59 @@
 import telebot
-import random
 from flask import Flask, request
 
-TOKEN = '8036017301:AAGuK4bnXaY3zosVs8FDFnJFVZU0kp47qXQ'
-bot = telebot.TeleBot(TOKEN)
+API_TOKEN = '8036017301:AAGuK4bnXaY3zosVs8FDFnJFVZU0kp47qXQ'
+bot = telebot.TeleBot(API_TOKEN)
 app = Flask(__name__)
 
-# Список офферов
 offers = [
-    "https://lnk.do/x8H2aVwb",
-    "https://lnk.do/FeVFAh5"
+    "🔥 <a href='https://lnk.do/x8H2aVwb'>Узнать свой рейтинг и получить займ</a>",
+    "💰 <a href='https://lnk.do/FeVFAh5'>Моментальное одобрение займа</a>"
 ]
 
-# Храним, какие офферы уже были показаны каждому пользователю
-user_offers = {}
+user_data = {}
 
-# Команда /start
 @bot.message_handler(commands=['start'])
-def start(message):
+def start_message(message):
     user_id = message.chat.id
-    user_offers[user_id] = []
-    welcome = (
-        "👋 Добро пожаловать в *KiCheckBot!*\n\n"
-        "🔍 Проверьте свою кредитную историю и получите одобрение на займ "
-        "от проверенных МФО.\n\n"
-        "Нажмите кнопку ниже, чтобы начать:"
-    )
-    markup = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
-    markup.add("📊 Проверить КИ")
-    bot.send_message(user_id, welcome, reply_markup=markup, parse_mode="Markdown")
+    user_data[user_id] = {'step': 1}
+    bot.send_message(user_id, "👋 Добро пожаловать в <b>KiCheckBot</b>!\n\n"
+                              "Проверьте свою кредитную историю и получите одобрение на займ.", parse_mode='HTML')
+    bot.send_message(user_id, "📞 Пожалуйста, отправьте ваш номер телефона для продолжения.")
 
-# Обработка текстовых сообщений
+@bot.message_handler(content_types=['contact'])
+def handle_contact(message):
+    user_id = message.chat.id
+    user_data[user_id]['phone'] = message.contact.phone_number
+    bot.send_message(user_id, "✅ Спасибо! Теперь выберите подходящее предложение.")
+    send_offer(user_id)
+
 @bot.message_handler(func=lambda message: True)
-def handle_message(message):
+def handle_text(message):
     user_id = message.chat.id
-    text = message.text.lower()
-
-    if user_id not in user_offers:
-        user_offers[user_id] = []
-
-    if "проверить ки" in text:
-        send_offer(user_id)
-    elif "ещё вариант" in text:
-        send_offer(user_id)
+    if user_id in user_data and user_data[user_id]['step'] == 1:
+        bot.send_message(user_id, "📞 Пожалуйста, отправьте свой номер телефона как контакт.")
     else:
-        bot.send_message(user_id, "Выберите действие с помощью кнопок ниже.")
+        send_offer(user_id)
 
 def send_offer(user_id):
-    shown = user_offers.get(user_id, [])
-    remaining = list(set(offers) - set(shown))
+    import random
+    offer = random.choice(offers)
+    markup = telebot.types.InlineKeyboardMarkup()
+    markup.add(telebot.types.InlineKeyboardButton("🔁 Показать другое предложение", callback_data='next_offer'))
+    bot.send_message(user_id, offer, parse_mode='HTML', reply_markup=markup)
 
-    if not remaining:
-        user_offers[user_id] = []
-        remaining = offers.copy()
+@bot.callback_query_handler(func=lambda call: call.data == 'next_offer')
+def callback_next_offer(call):
+    send_offer(call.message.chat.id)
 
-    offer = random.choice(remaining)
-    user_offers[user_id].append(offer)
-
-    msg = (
-        "💳 Вот один из вариантов микрозайма для вас:\n"
-        f"{offer}\n\n"
-        "Если не подошло — нажмите «Ещё вариант»."
-    )
-    markup = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
-    markup.add("🔁 Ещё вариант")
-    bot.send_message(user_id, msg, reply_markup=markup)
-
-# Webhook обработка
-@app.route(f'/{TOKEN}', methods=['POST'])
+# Flask webhook
+@app.route(f'/{API_TOKEN}', methods=['POST'])
 def webhook():
-    json_str = request.get_data().decode('UTF-8')
-    update = telebot.types.Update.de_json(json_str)
+    json_string = request.get_data().decode('utf-8')
+    update = telebot.types.Update.de_json(json_string)
     bot.process_new_updates([update])
     return '!', 200
 
-@app.route('/', methods=['GET'])
+@app.route('/')
 def index():
-    return 'Bot is running!', 200
-
-if __name__ == '__main__':
-    import os
-    bot.remove_webhook()
-    bot.set_webhook(url=f"https://tg-bot-mfo.onrender.com/{TOKEN}")
-    app.run(host="0.0.0.0", port=int(os.environ.get('PORT', 5000)))
+    return "KiCheckBot is alive!", 200
